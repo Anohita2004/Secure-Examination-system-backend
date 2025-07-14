@@ -399,3 +399,12 @@ exports.getUserExamResult = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+// In your backend controller
+exports.getAllExams = async (req, res) => {
+  try {
+    const [results] = await db.query('SELECT id, title, start_date, end_date FROM exams');
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

@@ -72,6 +72,9 @@ app.use((req, res, next) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/exam', require('./routes/exam'));
 app.use('/api/exams', require('./routes/exam'));
+
+// Add this line for /api/exams
+app.get('/api/exams', require('./routes/exam') );
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/permissions', require('./routes/permissions'));
 const userRoutes = require('./routes/auth');
