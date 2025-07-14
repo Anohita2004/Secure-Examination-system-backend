@@ -194,14 +194,14 @@ exports.createExam = async (req, res) => {
   if (!hasCreatePermission) {
     return res.status(403).send('Access denied. Permission required: create_exam');
   }
-  const { title, description, due_date, created_by } = req.body;
-  if (!title || !description || !due_date || !created_by) {
+  const { title, description, due_date, created_by, start_date, end_date } = req.body;
+  if (!title || !description || !due_date || !created_by || !start_date || !end_date) {
     return res.status(400).json({ error: "Missing required fields" });
   }
   try {
     const [result] = await db.query(
-      'INSERT INTO Exams (title, description, due_date, created_by) VALUES (?, ?, ?, ?)',
-      [title, description, due_date, created_by]
+      'INSERT INTO Exams (title, description, due_date, created_by, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
+      [title, description, due_date, created_by, start_date, end_date]
     );
     res.send({ message: 'Exam created successfully', examId: result.insertId });
   } catch (err) {
@@ -253,12 +253,13 @@ exports.getAssignedExams = async (req, res) => {
   const { userId } = req.params;
   try {
     const [results] = await db.query(
-      `SELECT Exams.*, exam_assignments.attempted 
-       FROM Exams 
-       JOIN exam_assignments ON Exams.id = exam_assignments.exam_id 
-       WHERE Exam_Assignments.user_id = ?`,
-      [userId]
-    );
+  `SELECT Exams.*, exam_assignments.attempted 
+   FROM Exams 
+   JOIN exam_assignments ON Exams.id = exam_assignments.exam_id 
+   WHERE exam_assignments.user_id = ?
+     AND CURDATE() BETWEEN Exams.start_date AND Exams.end_date`,
+  [userId]
+);
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
