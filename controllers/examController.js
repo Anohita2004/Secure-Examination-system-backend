@@ -205,7 +205,7 @@ exports.createExam = async (req, res) => {
     );
     res.send({ message: 'Exam created successfully', examId: result.insertId });
   } catch (err) {
-    console.error('❌ Error creating exam:', err);
+    console.error('Error creating exam:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -227,12 +227,24 @@ exports.addQuestion = async (req, res) => {
 // Assign an exam to a user and send email
 exports.assignExam = async (req, res) => {
   const { exam_id, user_id, email } = req.body;
+  console.log('Assigning exam:', { exam_id, user_id, email }); // <-- Add this
   try {
-    await db.query('INSERT INTO Exam_Assignments (exam_id, user_id) VALUES (?, ?)', [exam_id, user_id]);
+    const [existing] = await db.query(
+      'SELECT * FROM exam_assignments WHERE exam_id = ? AND user_id = ?',
+      [exam_id, user_id]
+    );
+    if (existing.length > 0) {
+      return res.status(400).json({ error: "Exam already assigned to this user." });
+    }
+    await db.query(
+      'INSERT INTO exam_assignments (exam_id, user_id) VALUES (?, ?)',
+      [exam_id, user_id]
+    );
     await sendExamEmail(email, `Exam ID: ${exam_id}`, 'Check your due date on the portal');
     res.send({ message: 'Exam assigned and email sent ✅' });
   } catch (err) {
-    res.status(500).json({ message: 'Assigned but email failed ❌', error: err.message });
+    console.error('Error inserting assignment:', err); // <-- Add this
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -241,9 +253,9 @@ exports.getAssignedExams = async (req, res) => {
   const { userId } = req.params;
   try {
     const [results] = await db.query(
-      `SELECT Exams.*, Exam_Assignments.attempted 
+      `SELECT Exams.*, exam_assignments.attempted 
        FROM Exams 
-       JOIN Exam_Assignments ON Exams.id = Exam_Assignments.exam_id 
+       JOIN exam_assignments ON Exams.id = exam_assignments.exam_id 
        WHERE Exam_Assignments.user_id = ?`,
       [userId]
     );
@@ -334,7 +346,7 @@ exports.submitExamAnswers = async (req, res) => {
 
     // Mark exam as attempted
     await db.query(
-      'UPDATE Exam_Assignments SET attempted = 1 WHERE user_id = ? AND exam_id = ?',
+      'UPDATE exam_assignments SET attempted = 1 WHERE user_id = ? AND exam_id = ?',
       [user_id, examId]
     );
 

@@ -74,6 +74,8 @@ app.use('/api/exam', require('./routes/exam'));
 app.use('/api/exams', require('./routes/exam'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/permissions', require('./routes/permissions'));
+const userRoutes = require('./routes/auth');
+app.use('/api', userRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
