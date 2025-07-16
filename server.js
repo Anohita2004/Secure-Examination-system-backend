@@ -131,6 +131,7 @@ app.use('/api/exams', require('./routes/exam'));
 // User-related endpoints
 const userRoutes = require('./routes/user');
 app.use('/api/user', userRoutes);
+app.use('/api/analytics', require('./routes/analytics'));
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
