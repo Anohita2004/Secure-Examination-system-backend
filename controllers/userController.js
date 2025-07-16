@@ -114,3 +114,28 @@ exports.resetPassword = async (req, res) => {
 
   res.json({ message: "Password has been reset successfully." });
 };
+// Get exam results for a user
+exports.getUserResults = async (req, res) => {
+  const userId = req.params.userId;
+  try {
+    // Adjust the query to match your DB schema and table names
+    const [results] = await db.query(
+      `SELECT 
+         r.id,
+         r.exam_id,
+         e.title AS examTitle,
+         r.total_score,
+         r.passed,
+         r.evaluated_at
+       FROM results r
+       JOIN exams e ON r.exam_id = e.id
+       WHERE r.user_id = ?
+       ORDER BY r.evaluated_at DESC`,
+      [userId]
+    );
+    res.json(results);
+  } catch (err) {
+    console.error('Error fetching user results:', err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
