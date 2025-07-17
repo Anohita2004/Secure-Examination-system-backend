@@ -8,18 +8,27 @@ exports.getDashboardStats = async (req, res) => {
     const [[{ questionCount }]] = await db.query('SELECT COUNT(*) as questionCount FROM questions');
     const [[{ assignedCount }]] = await db.query('SELECT COUNT(*) as assignedCount FROM exam_assignments');
     const [[{ pendingCount }]] = await db.query('SELECT COUNT(*) as pendingCount FROM exam_assignments WHERE attempted = 0');
+    const [[{ userCount }]] = await db.query('SELECT COUNT(*) as userCount FROM users');
+    const [[{ permissionCount }]] = await db.query('SELECT COUNT(*) as permissionCount FROM permissions');
+    const [[{ adminCount }]] = await db.query("SELECT COUNT(*) as adminCount FROM users WHERE role = 'super_admin'");
+    const [[{ employeeCount }]] = await db.query("SELECT COUNT(*) as employeeCount FROM users WHERE role = 'employee'");
 
    console.log("examResult:", examCount);
     console.log("questionResult:", questionCount);
     console.log("assignedResult:", assignedCount);
     console.log("pendingResult:", pendingCount);
+     console.log("user count:", userCount);
    
    
     res.json({
       examCount,
       questionCount,
       assignedCount,
-      pendingCount
+      pendingCount,
+      userCount,
+      permissionCount,
+      adminCount,
+      employeeCount
     });
   } catch (err) {
     console.error("Dashboard stats error:", err); 
