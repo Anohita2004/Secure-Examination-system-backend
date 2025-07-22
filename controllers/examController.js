@@ -408,3 +408,34 @@ exports.getAllExams = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+// Load exams scheduled for a specific date
+exports.loadExamCalendar = async (req, res) => {
+  const selectedDate = req.params.date;
+
+  try {
+    const [rows] = await db.query(`
+      SELECT id, title, start_date, end_date
+      FROM Exams
+      WHERE start_date = ?
+    `, [selectedDate]);
+
+    // Add status field
+    const now = new Date();
+    const formattedRows = rows.map((exam) => {
+      const examDate = new Date(exam.start_date);
+      const status = now < examDate ? "Upcoming" : "Completed";
+      return {
+        id: exam.id,
+        title: exam.title,
+        date: exam.start_date,
+        status
+      };
+    });
+
+    res.json(formattedRows);
+  } catch (err) {
+    console.error("Error loading exam calendar:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

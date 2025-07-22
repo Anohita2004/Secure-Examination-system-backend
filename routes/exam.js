@@ -12,4 +12,7 @@ router.get('/:examId/questions', requireAuth, examController.getExamQuestions);
 router.post('/:examId/submit', requireAuth, examController.submitExamAnswers);
 router.get('/:examId/result/:userId', requireAuth, examController.getUserExamResult);
 router.get('/:examId/results', requireAuth, examController.getAllExamResults);
+router.get('/calendar/:date', examController.loadExamCalendar);
+
+
 module.exports = router;
