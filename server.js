@@ -132,6 +132,8 @@ app.use('/api/exams', require('./routes/exam'));
 const userRoutes = require('./routes/user');
 app.use('/api/user', userRoutes);
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/announcements', require('./routes/announcement'));
+
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
