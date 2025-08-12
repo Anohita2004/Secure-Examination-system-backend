@@ -91,7 +91,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-
+const superadminRoutes = require('./routes/superadmin');
 dotenv.config();
 const app = express();
 
@@ -124,6 +124,8 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/exam', require('./routes/exam'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/permissions', require('./routes/permissions'));
+app.use('/api/superadmin', require('./routes/superadmin'));
+
 
 // Exams list endpoint (if needed separately)
 app.use('/api/exams', require('./routes/exam'));
