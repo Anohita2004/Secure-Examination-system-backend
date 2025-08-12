@@ -130,7 +130,7 @@ app.use('/api/exams', require('./routes/exam'));
 
 // User-related endpoints
 const userRoutes = require('./routes/user');
-app.use('/api/user', userRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/announcements', require('./routes/announcement'));
 

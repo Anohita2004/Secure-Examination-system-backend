@@ -60,7 +60,7 @@ const pool = mysql.createPool({
 });
 
 // Add this route for super admin to create employees
-router.post('/users', async (req, res) => {
+router.post('/', async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'Missing required fields' });
