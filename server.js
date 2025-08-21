@@ -136,6 +136,18 @@ app.use('/api/users', userRoutes);
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/announcements', require('./routes/announcement'));
 
+// Serve frontend (index.html) for all non-API routes
+const path = require('path');
+
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, '..', 'exam')));
+
+// For all routes NOT starting with /api, serve index.html for frontend routing
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'exam', 'index.html'));
+});
+
+
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
