@@ -378,27 +378,26 @@ exports.getAllExamResults = async (req, res) => {
 };
 
 // Get detailed result of a user for a specific exam
-exports.getUserExamResult = async (req, res) => {
-  const { examId, userId } = req.params;
+// controllers/examController.js
+
+exports.getUserResults = async (req, res) => {
+  const { userId } = req.params;
   try {
     const [results] = await db.query(
-      `SELECT q.id as question_id, q.question_text, q.correct_option, a.answer_option
-       FROM Questions q
-       LEFT JOIN Answers a ON q.id = a.question_id AND a.user_id = ?
-       WHERE q.exam_id = ?`,
-      [userId, examId]
+      `SELECT e.id AS exam_id, e.title, r.score, r.submitted_at
+       FROM Results r
+       JOIN Exams e ON r.exam_id = e.id
+       WHERE r.user_id = ?`,
+      [userId]
     );
 
-    let score = 0;
-    results.forEach(r => {
-      if (r.answer_option && r.answer_option === r.correct_option) score++;
-    });
-
-    res.json({ answers: results, score, total: results.length });
+    res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in getUserResults:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
+
 // In your backend controller
 exports.getAllExams = async (req, res) => {
   try {

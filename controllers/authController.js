@@ -96,6 +96,7 @@ const db = require('../models/db');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
+// ✅ Register
 exports.register = (req, res) => {
   const { name, email, password, role } = req.body;
   const hashedPassword = bcrypt.hashSync(password, 8);
@@ -107,16 +108,33 @@ exports.register = (req, res) => {
   });
 };
 
+// ✅ Login with permissions
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const [results] = await db.query('SELECT * FROM Users WHERE email = ?', [email]);
     if (results.length === 0) return res.status(401).send('User not found');
+    
     const user = results[0];
     const isValid = bcrypt.compareSync(password, user.password_hash);
     if (!isValid) return res.status(401).send('Invalid credentials');
 
-    // Create session
+    // 🔑 Fetch permissions
+    let permissions = [];
+    if (user.role === 'super_admin') {
+      const [allPerms] = await db.query('SELECT name FROM permissions');
+      permissions = allPerms.map(p => p.name);
+    } else {
+      const [permResults] = await db.query(`
+        SELECT p.name 
+        FROM permissions p
+        JOIN user_permissions up ON p.id = up.permission_id
+        WHERE up.user_id = ?
+      `, [user.id]);
+      permissions = permResults.map(p => p.name);
+    }
+
+    // ✅ Create session
     const sessionId = uuidv4();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await db.query(
@@ -124,29 +142,66 @@ exports.login = async (req, res) => {
       [sessionId, user.id, user.role, expiresAt]
     );
 
+    // Set cookie
     res.cookie('session_id', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
       maxAge: 60 * 60 * 1000
     });
-    res.json({ success: true });
+
+    // ✅ Return user with permissions
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        permissions
+      }
+    });
+
   } catch (err) {
     console.error("❌ Login error:", err);
     res.status(500).send('Internal server error');
   }
 };
 
+// ✅ Get current user (with permissions)
 exports.getCurrentUser = async (req, res) => {
-  // req.user is set by requireAuth middleware
-  res.json({
-    id: req.user.id,
-    name: req.user.name,
-    email: req.user.email,
-    role: req.user.role
-  });
+  try {
+    // req.user is set by requireAuth middleware
+    const user = req.user;
+
+    let permissions = [];
+    if (user.role === 'super_admin') {
+      const [allPerms] = await db.query('SELECT name FROM permissions');
+      permissions = allPerms.map(p => p.name);
+    } else {
+      const [permResults] = await db.query(`
+        SELECT p.name 
+        FROM permissions p
+        JOIN user_permissions up ON p.id = up.permission_id
+        WHERE up.user_id = ?
+      `, [user.id]);
+      permissions = permResults.map(p => p.name);
+    }
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions
+    });
+  } catch (err) {
+    console.error("❌ getCurrentUser error:", err);
+    res.status(500).send('Internal server error');
+  }
 };
 
+// ✅ Logout
 exports.logout = async (req, res) => {
   const sessionId = req.cookies.session_id;
   if (sessionId) {
