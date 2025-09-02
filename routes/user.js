@@ -17,6 +17,8 @@ router.post('/reset-password', userController.resetPassword);
 
 
 // Get exam results for a user
-router.get('/:userId/results', userController.getUserResults);
+// routes/userRoutes.js
+router.get("/users/:userId/results", userController.getUserResults);
+
 
 module.exports = router;
