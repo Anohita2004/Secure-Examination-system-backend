@@ -194,14 +194,16 @@ exports.createExam = async (req, res) => {
   if (!hasCreatePermission) {
     return res.status(403).send('Access denied. Permission required: create_exam');
   }
-  const { title, description, due_date, created_by, start_date, end_date } = req.body;
-  if (!title || !description || !due_date || !created_by || !start_date || !end_date) {
+ // controllers/examController.js
+  const { title, description, due_date, created_by, start_date, end_date, subject } = req.body;
+  if (!title || !description || !due_date || !created_by || !start_date || !end_date || !subject) {
     return res.status(400).json({ error: "Missing required fields" });
   }
+
   try {
     const [result] = await db.query(
-      'INSERT INTO Exams (title, description, due_date, created_by, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
-      [title, description, due_date, created_by, start_date, end_date]
+      'INSERT INTO Exams (title, description, due_date, created_by, start_date, end_date, subject) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [title, description, due_date, created_by, start_date, end_date, subject]
     );
     res.send({ message: 'Exam created successfully', examId: result.insertId });
   } catch (err) {
@@ -209,6 +211,8 @@ exports.createExam = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+
 
 // Add a new question to an exam
 exports.addQuestion = async (req, res) => {
@@ -249,22 +253,25 @@ exports.assignExam = async (req, res) => {
 };
 
 // Get exams assigned to a user
+// examController.js
 exports.getAssignedExams = async (req, res) => {
   const { userId } = req.params;
   try {
     const [results] = await db.query(
-  `SELECT Exams.*, exam_assignments.attempted 
-   FROM Exams 
-   JOIN exam_assignments ON Exams.id = exam_assignments.exam_id 
-   WHERE exam_assignments.user_id = ?
-     AND CURDATE() BETWEEN Exams.start_date AND Exams.end_date`,
-  [userId]
-);
+      `SELECT e.id, e.title, e.subject, e.start_date, e.end_date, 
+              COALESCE(ea.attempted, 0) AS attempted
+       FROM Exams e
+       JOIN exam_assignments ea ON e.id = ea.exam_id
+       WHERE ea.user_id = ?`,
+      [userId]
+    );
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
+
 
 // Get questions for a specific exam
 exports.getExamQuestions = async (req, res) => {

@@ -1,0 +1,2021 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/workflows/backend-ci.yml
+.gitignore
+controllers/analyticsController.js
+controllers/announcementController.js
+controllers/authController.js
+controllers/dashboardController.js
+controllers/examController.js
+controllers/permissionController.js
+controllers/resultsController.js
+controllers/superadminController.js
+controllers/userController.js
+middleware/authMiddleware.js
+middleware/permissionMiddleware.js
+models/db.js
+package.json
+routes/analytics.js
+routes/announcement.js
+routes/auth.js
+routes/dashboard.js
+routes/exam.js
+routes/permissions.js
+routes/resultsRoutes.js
+routes/superadmin.js
+routes/user.js
+server.js
+utils/mailer.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/workflows/backend-ci.yml">
+name: Backend CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run test (placeholder for now)
+        run: echo "No tests yet, skipping..."
+
+      - name: Start backend server (mock run)
+        run: |
+          nohup node server.js &
+          sleep 10
+          curl http://localhost:4000 || echo "Server is up"
+</file>
+
+<file path=".gitignore">
+.env
+</file>
+
+<file path="controllers/analyticsController.js">
+const db = require('../models/db');
+
+// Exam summary: attempts, avg score, pass/fail count per exam
+exports.examSummary = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        e.id, 
+        e.title,
+        COUNT(r.id) AS attempts,
+        IFNULL(AVG(r.total_score), 0) AS avg_score,
+        SUM(r.passed = 1) AS pass_count,
+        SUM(r.passed = 0) AS fail_count
+      FROM exams e
+      LEFT JOIN results r ON e.id = r.exam_id
+      GROUP BY e.id
+      ORDER BY e.title
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Most missed questions: questions with the most wrong answers
+exports.mostMissedQuestions = async (req, res) => {
+  try {
+    // This assumes you have a way to know the correct answer for each question.
+    // If you have a 'correct_option' column in 'questions', use it.
+    const [rows] = await db.query(`
+      SELECT 
+        q.id, 
+        q.question_text, 
+        COUNT(a.id) AS wrong_count
+      FROM questions q
+      JOIN answers a ON q.id = a.question_id
+      JOIN (
+        SELECT id, correct_option FROM questions
+      ) cq ON cq.id = q.id
+      WHERE a.answer_option != cq.correct_option
+      GROUP BY q.id
+      ORDER BY wrong_count DESC
+      LIMIT 10
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+</file>
+
+<file path="controllers/permissionController.js">
+const db = require('../models/db');
+
+// Get all permissions
+exports.getAllPermissions = async (req, res) => {
+  try {
+    const [results] = await db.query('SELECT * FROM permissions ORDER BY name');
+    res.json(results);
+  } catch (err) {
+    console.error('❌ Error fetching permissions:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// Get user permissions
+exports.getUserPermissions = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const [results] = await db.query(`
+      SELECT p.id, p.name 
+      FROM permissions p 
+      JOIN user_permissions up ON p.id = up.permission_id 
+      WHERE up.user_id = ?
+    `, [userId]);
+    res.json(results);
+  } catch (err) {
+    console.error('❌ Error fetching user permissions:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// Assign permission to user
+exports.assignPermission = async (req, res) => {
+  try {
+    const { userId, permissionId } = req.body;
+    
+    // Check if user exists
+    const [userCheck] = await db.query('SELECT id FROM Users WHERE id = ?', [userId]);
+    if (userCheck.length === 0) {
+      return res.status(404).send('User not found');
+    }
+    
+    // Check if permission exists
+    const [permCheck] = await db.query('SELECT id FROM permissions WHERE id = ?', [permissionId]);
+    if (permCheck.length === 0) {
+      return res.status(404).send('Permission not found');
+    }
+    
+    // Check if already assigned
+    const [existing] = await db.query(
+      'SELECT * FROM user_permissions WHERE user_id = ? AND permission_id = ?',
+      [userId, permissionId]
+    );
+    
+    if (existing.length > 0) {
+      return res.status(400).send('Permission already assigned to user');
+    }
+    
+    // Assign permission
+    await db.query(
+      'INSERT INTO user_permissions (user_id, permission_id) VALUES (?, ?)',
+      [userId, permissionId]
+    );
+    
+    res.json({ message: 'Permission assigned successfully' });
+  } catch (err) {
+    console.error('❌ Error assigning permission:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// Remove permission from user
+exports.removePermission = async (req, res) => {
+  try {
+    const { userId, permissionId } = req.body;
+    
+    await db.query(
+      'DELETE FROM user_permissions WHERE user_id = ? AND permission_id = ?',
+      [userId, permissionId]
+    );
+    
+    res.json({ message: 'Permission removed successfully' });
+  } catch (err) {
+    console.error('❌ Error removing permission:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// Get all users with their permissions
+exports.getAllUsersWithPermissions = async (req, res) => {
+  try {
+    const [results] = await db.query(`
+      SELECT 
+        u.id, u.name, u.email, u.role,
+        GROUP_CONCAT(p.name) as permissions
+      FROM users u
+      LEFT JOIN user_permissions up ON u.id = up.user_id
+      LEFT JOIN permissions p ON up.permission_id = p.id
+      GROUP BY u.id
+      ORDER BY u.name
+    `);
+    
+    // Parse permissions string to array
+    const users = results.map(user => ({
+      ...user,
+      permissions: user.permissions ? user.permissions.split(',') : []
+    }));
+    
+    res.json(users);
+  } catch (err) {
+    console.error('❌ Error fetching users with permissions:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+</file>
+
+<file path="controllers/resultsController.js">
+const db = require("../models/db"); // adjust path to your db connection
+
+exports.getUserResults = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [rows] = await db.query(
+      "SELECT * FROM results WHERE user_id = ? ORDER BY evaluated_at DESC",
+      [userId]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching results:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+</file>
+
+<file path="models/db.js">
+const mysql = require('mysql2/promise');
+require('dotenv').config();
+
+const db = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+module.exports = db;
+</file>
+
+<file path="routes/analytics.js">
+const express = require('express');
+const router = express.Router();
+const analyticsController = require('../controllers/analyticsController');
+
+router.get('/exam-summary', analyticsController.examSummary);
+router.get('/most-missed-questions', analyticsController.mostMissedQuestions);
+
+module.exports = router;
+</file>
+
+<file path="routes/dashboard.js">
+const express = require('express');
+const router = express.Router();
+
+const dashboardController = require('../controllers/dashboardController');
+const { requireAuth } = require('../middleware/authMiddleware'); // <-- DESTRUCTURE
+
+router.get('/stats', dashboardController.getDashboardStats);
+router.get('/table', requireAuth, dashboardController.getDashboardTable);
+
+module.exports = router;
+</file>
+
+<file path="routes/resultsRoutes.js">
+const express = require("express");
+const router = express.Router();
+const resultsController = require("../controllers/resultsController");
+
+// GET all results for a user
+router.get("/users/:userId/results", resultsController.getUserResults);
+
+module.exports = router;
+</file>
+
+<file path="controllers/authController.js">
+/*const db = require('../models/db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+exports.register = (req, res) => {
+  const { name, email, password, role } = req.body;
+  const hashedPassword = bcrypt.hashSync(password, 8);
+
+  const sql = 'INSERT INTO Users (name, email, password_hash, role) VALUES (?, ?, ?, ?)';
+  db.query(sql, [name, email, hashedPassword, role], (err) => {
+    if (err) return res.status(500).send(err);
+    res.send('User registered!');
+  });
+};
+
+/*exports.login = (req, res) => {
+  const { email, password } = req.body;
+
+  db.query('SELECT * FROM Users WHERE email = ?', [email], (err, results) => {
+    if (err) return res.status(500).send(err);
+    if (results.length === 0) return res.status(401).send('User not found');
+
+    const user = results[0];
+    const isValid = bcrypt.compareSync(password, user.password_hash);
+    if (!isValid) return res.status(401).send('Invalid credentials');
+
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+      expiresIn: '1h',
+    });
+
+    res.json({ token, userId: user.id, role: user.role });
+  });
+};*/
+
+//the above */ is false
+/*exports.login = async (req, res) => {
+  try {
+    console.log("🔥 LOGIN ROUTE HIT:", req.body);
+
+    const { email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+
+    const [results] = await db.query('SELECT * FROM Users WHERE email = ?', [email]);
+
+    if (results.length === 0) return res.status(401).send('User not found');
+
+    const user = results[0];
+    const isValid = bcrypt.compareSync(password, user.password_hash);
+    if (!isValid) return res.status(401).send('Invalid credentials');
+
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+      expiresIn: '1h',
+    });
+
+    //  Insert login record
+    await db.query(
+      'INSERT INTO LoginHistory (user_id, ip_address, user_agent) VALUES (?, ?, ?)',
+      [user.id, ip, userAgent]
+    );
+    //CHANGES
+    //res.json({ token, userId: user.id, role: user.role });
+    res.cookie('token', token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production', // true in prod, false in dev
+  sameSite: 'Strict', // or 'Lax' if you need cross-site
+  maxAge: 60 * 60 * 1000 // 1 hour
+});
+res.json({ success: true }); // Don't send token to frontend!
+  } catch (err) {
+    console.error("❌ Login error:", err);
+    res.status(500).send('Internal server error');
+  }
+};
+// /api/auth/me
+exports.getCurrentUser = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [results] = await db.query('SELECT id, name, email, role FROM Users WHERE id = ?', [userId]);
+
+    if (results.length === 0) return res.status(404).send('User not found');
+
+    res.json(results[0]); // Send secure user info
+  } catch (err) {
+    console.error('❌ Error fetching user info:', err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+exports.logout = (req, res) => {
+  res.clearCookie('token');
+  res.json({ success: true });
+};
+*/
+const db = require('../models/db');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
+
+// ✅ Register
+exports.register = (req, res) => {
+  const { name, email, password, role } = req.body;
+  const hashedPassword = bcrypt.hashSync(password, 8);
+
+  const sql = 'INSERT INTO Users (name, email, password_hash, role) VALUES (?, ?, ?, ?)';
+  db.query(sql, [name, email, hashedPassword, role], (err) => {
+    if (err) return res.status(500).send(err);
+    res.send('User registered!');
+  });
+};
+
+// ✅ Login with permissions
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const [results] = await db.query('SELECT * FROM Users WHERE email = ?', [email]);
+    if (results.length === 0) return res.status(401).send('User not found');
+    
+    const user = results[0];
+    const isValid = bcrypt.compareSync(password, user.password_hash);
+    if (!isValid) return res.status(401).send('Invalid credentials');
+
+    // 🔑 Fetch permissions
+    let permissions = [];
+    if (user.role === 'super_admin') {
+      const [allPerms] = await db.query('SELECT name FROM permissions');
+      permissions = allPerms.map(p => p.name);
+    } else {
+      const [permResults] = await db.query(`
+        SELECT p.name 
+        FROM permissions p
+        JOIN user_permissions up ON p.id = up.permission_id
+        WHERE up.user_id = ?
+      `, [user.id]);
+      permissions = permResults.map(p => p.name);
+    }
+
+    // ✅ Create session
+    const sessionId = uuidv4();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await db.query(
+      'INSERT INTO sessions (id, user_id, role, expires_at) VALUES (?, ?, ?, ?)',
+      [sessionId, user.id, user.role, expiresAt]
+    );
+
+    // Set cookie
+    res.cookie('session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      maxAge: 60 * 60 * 1000
+    });
+
+    // ✅ Return user with permissions
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        permissions
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Login error:", err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// ✅ Get current user (with permissions)
+exports.getCurrentUser = async (req, res) => {
+  try {
+    // req.user is set by requireAuth middleware
+    const user = req.user;
+
+    let permissions = [];
+    if (user.role === 'super_admin') {
+      const [allPerms] = await db.query('SELECT name FROM permissions');
+      permissions = allPerms.map(p => p.name);
+    } else {
+      const [permResults] = await db.query(`
+        SELECT p.name 
+        FROM permissions p
+        JOIN user_permissions up ON p.id = up.permission_id
+        WHERE up.user_id = ?
+      `, [user.id]);
+      permissions = permResults.map(p => p.name);
+    }
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions
+    });
+  } catch (err) {
+    console.error("❌ getCurrentUser error:", err);
+    res.status(500).send('Internal server error');
+  }
+};
+
+// ✅ Logout
+exports.logout = async (req, res) => {
+  const sessionId = req.cookies.session_id;
+  if (sessionId) {
+    await db.query('DELETE FROM sessions WHERE id = ?', [sessionId]);
+    res.clearCookie('session_id');
+  }
+  res.json({ success: true });
+};
+</file>
+
+<file path="controllers/dashboardController.js">
+// controllers/dashboardController.js
+const db = require('../models/db');
+
+exports.getDashboardStats = async (req, res) => {
+  try {
+    console.log("Dashboard stats route hit");
+    const [[{ examCount }]] = await db.query('SELECT COUNT(*) as examCount FROM exams');
+    const [[{ questionCount }]] = await db.query('SELECT COUNT(*) as questionCount FROM questions');
+    const [[{ assignedCount }]] = await db.query('SELECT COUNT(*) as assignedCount FROM exam_assignments');
+    const [[{ pendingCount }]] = await db.query('SELECT COUNT(*) as pendingCount FROM exam_assignments WHERE attempted = 0');
+    const [[{ userCount }]] = await db.query('SELECT COUNT(*) as userCount FROM users');
+    const [[{ permissionCount }]] = await db.query('SELECT COUNT(*) as permissionCount FROM permissions');
+    const [[{ adminCount }]] = await db.query("SELECT COUNT(*) as adminCount FROM users WHERE role = 'super_admin'");
+    const [[{ employeeCount }]] = await db.query("SELECT COUNT(*) as employeeCount FROM users WHERE role = 'employee'");
+
+   console.log("examResult:", examCount);
+    console.log("questionResult:", questionCount);
+    console.log("assignedResult:", assignedCount);
+    console.log("pendingResult:", pendingCount);
+     console.log("user count:", userCount);
+   
+   
+    res.json({
+      examCount,
+      questionCount,
+      assignedCount,
+      pendingCount,
+      userCount,
+      permissionCount,
+      adminCount,
+      employeeCount
+    });
+  } catch (err) {
+    console.error("Dashboard stats error:", err); 
+    res.status(500).json({ error: err.message });
+    
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+};
+// At the top, require your db connection if needed
+
+
+exports.getDashboardTable = async (req, res) => {
+  try {
+    // Example SQL, adjust table/column names as needed
+    const query = `
+      SELECT 
+        u.name, u.email, u.role,
+        e.title,
+        CASE WHEN ea.attempted = 1 THEN 'Yes' ELSE 'No' END as attempted
+      FROM users u
+      LEFT JOIN exam_assignments ea ON u.id = ea.user_id
+      LEFT JOIN exams e ON ea.exam_id = e.id
+      ORDER BY u.name, e.title
+    `;
+    const [rows] = await db.query(query);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+</file>
+
+<file path="controllers/superadminController.js">
+// controllers/superadminController.js
+const crypto = require('crypto');
+const bcrypt = require('bcrypt');
+const db = require('../models/db');
+const nodemailer = require('nodemailer');
+const twilio = require('twilio');
+
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Twilio setup
+
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
+
+
+// Step 1: Request password reset
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+    if (rows.length === 0) 
+      return res.status(404).json({ success: false, message: "User not found" });
+
+    const user = rows[0];
+    if (!user.phone_number) 
+      return res.status(400).json({ success: false, message: "Phone number not set for this account" });
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+    await db.query(
+      "UPDATE users SET reset_token=?, reset_token_expires=?, otp_code=?, otp_expires=? WHERE id=?",
+      [resetToken, expires, otp, expires, user.id]
+    );
+
+    // Send reset link via email
+    const resetLink = `http://localhost:8080/#/reset-password/${resetToken}`;
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: user.email,
+        subject: "Password Reset Request",
+        html: `<p>Click the link to reset password:</p><a href="${resetLink}">${resetLink}</a>`
+      });
+    } catch (emailErr) {
+      console.error("Email send error:", emailErr);
+      return res.status(500).json({ success: false, message: "Failed to send reset email" });
+    }
+
+    // Send OTP via SMS
+    try {
+      await twilioClient.messages.create({
+        body: `Your OTP is: ${otp}`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: user.phone_number // Make sure this is in E.164 format e.g. +919876543210
+      });
+    } catch (smsErr) {
+      console.error("SMS send error:", smsErr);
+      return res.status(500).json({ success: false, message: "Failed to send OTP SMS" });
+    }
+
+    res.json({ success: true, message: "Reset link sent to email & OTP sent to mobile" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+// Step 2: Verify OTP
+exports.verifyOtp = async (req, res) => {
+  const { token, otp } = req.body;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM users WHERE reset_token=? AND reset_token_expires > NOW()",
+      [token]
+    );
+    if (rows.length === 0) return res.status(400).json({ message: "Invalid or expired token" });
+
+    const user = rows[0];
+    if (user.otp_code !== otp || new Date(user.otp_expires) < new Date()) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    res.json({ message: "OTP verified. You can now reset your password." });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Step 3: Reset password
+exports.resetPassword = async (req, res) => {
+  const { token, password } = req.body;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM users WHERE reset_token=? AND reset_token_expires > NOW()",
+      [token]
+    );
+    if (rows.length === 0) return res.status(400).json({ message: "Invalid or expired token" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await db.query(
+      "UPDATE users SET password=?, reset_token=NULL, reset_token_expires=NULL, otp_code=NULL, otp_expires=NULL WHERE id=?",
+      [hashedPassword, rows[0].id]
+    );
+
+    res.json({ message: "Password updated successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+</file>
+
+<file path="middleware/authMiddleware.js">
+/*const db = require('../models/db');
+
+exports.requireAuth = async (req, res, next) => {
+  const sessionId = req.cookies.session_id;
+  if (!sessionId) return res.status(401).send('Unauthorized: No session');
+
+  const [results] = await db.query(`
+    SELECT sessions.*, Users.name, Users.email, Users.role
+    FROM sessions
+    JOIN Users ON sessions.user_id = Users.id
+    WHERE sessions.id = ? AND sessions.expires_at > NOW()
+  `, [sessionId]);
+
+  if (results.length === 0) return res.status(401).send('Session expired or invalid');
+
+  req.user = {
+    id: results[0].user_id,
+    name: results[0].name,
+    email: results[0].email,
+    role: results[0].role
+  };
+
+  next();
+};
+
+exports.isAdmin = (req, res, next) => {
+  if (req.user.role !== "admin") return res.status(403).send("Admins only");
+  next();
+};
+// Add this function to your existing authMiddleware.js
+exports.requireSuperAdmin = (req, res, next) => {
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).send('Access denied. Super admin required.');
+  }
+  next();
+};*/
+// authMiddleware.js
+const db = require('../models/db');
+
+// ✅ Check if user is authenticated (session validation)
+exports.requireAuth = async (req, res, next) => {
+  try {
+    const sessionId = req.cookies.session_id;
+    if (!sessionId) return res.status(401).send('Unauthorized: No session');
+
+    const [results] = await db.query(`
+      SELECT s.*, u.name, u.email, u.role
+      FROM sessions s
+      JOIN Users u ON s.user_id = u.id
+      WHERE s.id = ? AND s.expires_at > NOW()
+    `, [sessionId]);
+
+    if (results.length === 0) return res.status(401).send('Session expired or invalid');
+
+    const user = results[0];
+
+    // ✅ Fetch permissions
+    let permissions = [];
+    if (user.role === 'super_admin') {
+      const [allPerms] = await db.query('SELECT name FROM permissions');
+      permissions = allPerms.map(p => p.name);
+    } else {
+      const [permResults] = await db.query(`
+        SELECT p.name
+        FROM permissions p
+        JOIN user_permissions up ON p.id = up.permission_id
+        WHERE up.user_id = ?
+      `, [user.user_id]);
+      permissions = permResults.map(p => p.name);
+    }
+
+    // Attach user + permissions
+    req.user = {
+      id: user.user_id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions
+    };
+
+    next();
+  } catch (err) {
+    console.error("❌ Auth middleware error:", err);
+    res.status(500).send("Internal server error");
+  }
+};
+
+// ✅ Role-based check
+exports.requireRole = (role) => {
+  return (req, res, next) => {
+    if (!req.user || req.user.role !== role) {
+      return res.status(403).send(`Access denied. Requires role: ${role}`);
+    }
+    next();
+  };
+};
+
+// ✅ Permission-based check
+exports.requirePermission = (permission) => {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).send('Unauthorized');
+    if (req.user.role === 'super_admin') return next(); // allow super admin
+    if (!req.user.permissions.includes(permission)) {
+      return res.status(403).send(`Access denied. Requires permission: ${permission}`);
+    }
+    next();
+  };
+};
+</file>
+
+<file path="middleware/permissionMiddleware.js">
+const db = require('../models/db');
+
+exports.hasPermission = async (userId, permissionName) => {
+  try {
+    // First, check if user is super_admin
+    const [userResults] = await db.query(`
+      SELECT role FROM users WHERE id = ?
+    `, [userId]);
+    
+    if (userResults.length > 0 && userResults[0].role === 'super_admin') {
+      return true; // Super admin has all permissions
+    }
+    
+    // For non-super admins, check specific permission
+    const [results] = await db.query(`
+      SELECT p.id 
+      FROM permissions p 
+      JOIN user_permissions up ON p.id = up.permission_id 
+      WHERE up.user_id = ? AND p.name = ?
+    `, [userId, permissionName]);
+    
+    return results.length > 0;
+  } catch (err) {
+    console.error('Permission check error:', err);
+    return false;
+  }
+};
+
+exports.requirePermission = (permissionName) => {
+  return async (req, res, next) => {
+    try {
+      if (req.user && req.user.role === 'super_admin') {
+        return next(); // super admin always allowed
+      }
+      const has = await exports.hasPermission(req.user.id, permissionName);
+      if (!has) return res.status(403).send(`Access denied. Permission required: ${permissionName}`);
+      next();
+    } catch (err) {
+      console.error('Permission middleware error:', err);
+      res.status(500).send('Internal server error');
+    }
+  };
+};
+</file>
+
+<file path="routes/permissions.js">
+const express = require('express');
+const router = express.Router();
+const permissionController = require('../controllers/permissionController');
+
+const { requireAuth } = require('../middleware/authMiddleware');
+// IMPORTANT: use permissionMiddleware here
+const { requirePermission } = require('../middleware/permissionMiddleware');
+
+router.use(requireAuth);
+router.use(requirePermission('manage_permissions'));
+
+router.get('/', permissionController.getAllPermissions);
+router.get('/users', permissionController.getAllUsersWithPermissions);
+router.get('/users/:userId', permissionController.getUserPermissions);
+router.post('/assign', permissionController.assignPermission);
+router.delete('/remove', permissionController.removePermission);
+
+module.exports = router;
+</file>
+
+<file path="routes/superadmin.js">
+// routes/superadmin.js
+const express = require('express');
+const router = express.Router();
+const superadminController = require('../controllers/superadminController');
+
+router.post('/forgot-password', superadminController.forgotPassword);
+router.post('/verify-otp', superadminController.verifyOtp);
+router.post('/reset-password', superadminController.resetPassword);
+
+module.exports = router;
+</file>
+
+<file path="utils/mailer.js">
+const nodemailer = require('nodemailer');
+require('dotenv').config();
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // e.g., your.email@gmail.com
+    pass: process.env.EMAIL_PASS, // your App Password from Google
+  },
+});
+
+// Send exam assignment email
+exports.sendExamEmail = (toEmail, examTitle, dueDate) => {
+  const mailOptions = {
+    from: `"HR - Secure Exam System" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: '📌 New Exam Assigned to You!',
+    html: `<p>Hello,</p>
+           <p>You have been assigned a new exam: <b>${examTitle}</b></p>
+           <p><b>Due Date:</b> ${dueDate}</p>
+           <p>Please log in to your portal to take the exam.</p>
+           <p>- Team HR</p>`,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
+// Send password reset email
+exports.sendResetEmail = async (to, resetLink) => {
+  const mailOptions = {
+    from: `"Exam App" <${process.env.EMAIL_USER}>`,
+    to: to,
+    subject: "Password Reset Request",
+    html: `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+</file>
+
+<file path="controllers/announcementController.js">
+const db = require('../models/db');
+
+exports.getAllAnnouncements = async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM Announcements ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching announcements:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+// ✅ Add this function if it's not there already
+exports.createAnnouncement = async (req, res) => {
+  const { title, message } = req.body;
+
+  if (!title || !message) {
+    return res.status(400).json({ error: "Title and message are required" });
+  }
+
+  try {
+    const [result] = await db.query(
+      'INSERT INTO Announcements (title, message, created_at) VALUES (?, ?, NOW())',
+      [title, message]
+    );
+
+    res.status(201).json({ message: "Announcement created", id: result.insertId });
+  } catch (err) {
+    console.error("Error creating announcement:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+// Get unread count
+exports.getUnreadCount = async (req, res) => {
+  const employeeId = req.params.employeeId;
+
+  try {
+    const [rows] = await db.query(`
+      SELECT COUNT(*) AS unreadCount
+      FROM Announcements a
+      WHERE NOT EXISTS (
+        SELECT 1 FROM Announcement_Reads ar
+        WHERE ar.announcement_id = a.id AND ar.employee_id = ?
+      )
+    `, [employeeId]);
+
+    res.json({ unreadCount: rows[0].unreadCount });
+  } catch (err) {
+    console.error("Error getting unread count:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// Mark an announcement as read
+exports.markAsRead = async (req, res) => {
+  const { employeeId, announcementId } = req.body;
+
+  try {
+    await db.query(`
+      INSERT IGNORE INTO Announcement_Reads (announcement_id, employee_id)
+      VALUES (?, ?)
+    `, [announcementId, employeeId]);
+
+    res.json({ message: "Marked as read" });
+  } catch (err) {
+    console.error("Error marking announcement as read:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+</file>
+
+<file path="package.json">
+{
+  "name": "secure-exam-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.1",
+    "nodemailer": "^7.0.4",
+    "twilio": "^5.8.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
+</file>
+
+<file path="routes/announcement.js">
+const express = require('express');
+const router = express.Router();
+const controller = require('../controllers/announcementController');
+
+router.get('/', controller.getAllAnnouncements);
+router.post('/', controller.createAnnouncement);
+router.get('/unread/:employeeId', controller.getUnreadCount);
+router.post('/mark-read', controller.markAsRead);
+
+
+module.exports = router;
+</file>
+
+<file path="routes/auth.js">
+/*const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+const { verifyToken } = require('../middleware/authMiddleware');
+
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.get('/me', verifyToken, authController.getCurrentUser); //  NEW
+router.post('/logout', authController.logout);
+
+module.exports = router;*/
+/*const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+const { requireAuth } = require('../middleware/authMiddleware');
+// At the top
+
+
+// const User = require('../models/User'); // adjust path as needed
+
+// Add this route for super admin to create employees
+router.post('/users', async (req, res) => {
+  const { name, email, password, role } = req.body;
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  try {
+    // TODO: Hash password, check for existing email, etc.
+    // Example using Mongoose:
+    // const user = new User({ name, email, password: hash(password), role });
+    // await user.save();
+    res.json({ success: true, message: 'User created' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+module.exports = router;
+
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.get('/me', requireAuth, authController.getCurrentUser);
+router.post('/logout', authController.logout);
+
+module.exports = router;
+*/
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+const { requireAuth } = require('../middleware/authMiddleware');
+const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
+
+// MySQL pool (adjust config)
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'Poopc@123',
+  database: 'secure_exam_system'
+});
+
+// Add this route for super admin to create employees
+router.post('/', async (req, res) => {
+  const { name, email, password, role } = req.body;
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  try {
+    // Check if email already exists
+    const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (rows.length > 0) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    // Insert user
+    await pool.query(
+      'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
+      [name, email, hashedPassword, role]
+    );
+    res.json({ success: true, message: 'User created' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Other auth routes
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.get('/me', requireAuth, authController.getCurrentUser);
+router.post('/logout', authController.logout);
+
+module.exports = router;
+</file>
+
+<file path="controllers/userController.js">
+/*const db = require('../models/db');
+const bcrypt = require('bcrypt');
+
+exports.changePassword = async (req, res) => {
+  const { user_id, old_password, new_password } = req.body;
+  if (!user_id || !old_password || !new_password) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  try {
+    // 1. Get user by id
+    const [users] = await db.query('SELECT password_hash FROM users WHERE id = ?', [user_id]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const user = users[0];
+
+    // Defensive check
+    if (!user.password_hash) {
+      return res.status(400).json({ error: "User does not have a password set." });
+    }
+
+    // 2. Compare old password
+    const match = await bcrypt.compare(old_password, user.password_hash);
+    if (!match) {
+      return res.status(400).json({ error: "Old password is incorrect" });
+    }
+
+    // 3. Hash new password
+    const hashed = await bcrypt.hash(new_password, 10);
+
+    // 4. Update password
+    await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [hashed, user_id]);
+    res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    console.error('Error changing password:', err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};*/
+const crypto = require('crypto');
+const db = require('../models/db');
+const bcrypt = require('bcrypt');
+const { sendResetEmail } = require('../utils/mailer'); // Uncomment and implement if you have a mailer
+
+exports.changePassword = async (req, res) => {
+  const { user_id, old_password, new_password } = req.body;
+  if (!user_id || !old_password || !new_password) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  try {
+    // 1. Get user by id
+    const [users] = await db.query('SELECT password_hash FROM users WHERE id = ?', [user_id]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const user = users[0];
+
+    // Defensive check
+    if (!user.password_hash) {
+      return res.status(400).json({ error: "User does not have a password set." });
+    }
+
+    // 2. Compare old password
+    const match = await bcrypt.compare(old_password, user.password_hash);
+    if (!match) {
+      return res.status(400).json({ error: "Old password is incorrect" });
+    }
+
+    // 3. Hash new password
+    const hashed = await bcrypt.hash(new_password, 10);
+
+    // 4. Update password
+    await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [hashed, user_id]);
+    res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    console.error('Error changing password:', err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+exports.requestPasswordReset = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+
+  const [users] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
+  if (users.length === 0) return res.status(404).json({ error: "User not found" });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 3600 * 1000); // 1 hour from now
+
+  await db.query('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE email = ?', [token, expires, email]);
+
+  // Send email with link (implement sendResetEmail in your mailer)
+  const resetLink = `http://localhost:8080/reset-password?token=${token}`;
+  await sendResetEmail(email, resetLink);
+
+  res.json({ message: "Password reset link sent to your email." });
+};
+
+exports.resetPassword = async (req, res) => {
+  const { token, new_password } = req.body;
+  if (!token || !new_password) return res.status(400).json({ error: "Missing fields" });
+
+  const [users] = await db.query(
+    'SELECT id FROM users WHERE reset_token = ? AND reset_token_expires > NOW()',
+    [token]
+  );
+  if (users.length === 0) return res.status(400).json({ error: "Invalid or expired token" });
+
+  const hashed = await bcrypt.hash(new_password, 10);
+  await db.query(
+    'UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+    [hashed, users[0].id]
+  );
+
+  res.json({ message: "Password has been reset successfully." });
+};
+// Get exam results for a user
+/*exports.getUserResults = async (req, res) => {
+  const userId = req.params.userId;
+  try {
+    // Adjust the query to match your DB schema and table names
+    const [results] = await db.query(
+      `SELECT 
+         r.id,
+         r.exam_id,
+         e.title AS examTitle,
+         r.total_score,
+         r.passed,
+         r.evaluated_at
+       FROM results r
+       JOIN exams e ON r.exam_id = e.id
+       WHERE r.user_id = ?
+       ORDER BY r.evaluated_at DESC`,
+      [userId]
+    );
+    res.json(results);
+  } catch (err) {
+    console.error('Error fetching user results:', err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};*/
+exports.getUserResults = async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const [rows] = await db.query(
+      `SELECT e.id AS exam_id, e.title, r.score, r.total, r.submitted_at
+       FROM exam_results r
+       JOIN exams e ON e.id = r.exam_id
+       WHERE r.user_id = ?
+       ORDER BY r.submitted_at DESC`,
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+</file>
+
+<file path="routes/exam.js">
+const express = require('express');
+const router = express.Router();
+const examController = require('../controllers/examController');
+const { requireAuth } = require('../middleware/authMiddleware');
+
+router.post('/create', requireAuth, examController.createExam);
+router.post('/add-question', requireAuth, examController.addQuestion);
+router.post('/assign', requireAuth, examController.assignExam);
+router.get('/', examController.getAllExams);
+router.get('/assigned/:userId', requireAuth, examController.getAssignedExams);
+router.get('/:examId/questions', requireAuth, examController.getExamQuestions);
+router.post('/:examId/submit', requireAuth, examController.submitExamAnswers);
+//router.get('/:userId/results', requireAuth, examController.getUserExamResult);
+router.get('/users/:userId/results', requireAuth, examController.getUserResults);
+router.get('/:examId/results', requireAuth, examController.getAllExamResults);
+router.get('/calendar/:date', examController.loadExamCalendar);
+
+
+module.exports = router;
+</file>
+
+<file path="routes/user.js">
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController');
+
+// Employee-initiated password change
+router.post('/change-password', userController.changePassword);
+
+
+
+
+// Employee-initiated password change
+router.post('/change-password', userController.changePassword);
+
+// Forgot password endpoints
+router.post('/request-password-reset', userController.requestPasswordReset);
+router.post('/reset-password', userController.resetPassword);
+
+
+// Get exam results for a user
+// routes/userRoutes.js
+router.get("/users/:userId/results", userController.getUserResults);
+
+
+module.exports = router;
+</file>
+
+<file path="controllers/examController.js">
+/*const db = require('../models/db');
+const { sendExamEmail } = require('../utils/mailer');
+const { hasPermission } = require('../middleware/permissionMiddleware');
+
+// Create a new exam
+exports.createExam = async (req, res) => {
+  // Check if user has permission to create exams
+  const hasCreatePermission = await hasPermission(req.user.id, 'create_exam');
+  if (!hasCreatePermission) {
+    return res.status(403).send('Access denied. Permission required: create_exam');
+  }
+  const { title, description, due_date, created_by } = req.body;
+  if (!title || !description || !due_date || !created_by) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  try {
+    const [result] = await db.query(
+      'INSERT INTO Exams (title, description, due_date, created_by) VALUES (?, ?, ?, ?)',
+      [title, description, due_date, created_by]
+    );
+    res.send({ message: 'Exam created successfully', examId: result.insertId });
+  } catch (err) {
+    console.error('❌ Error creating exam:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Add a new question to an exam
+exports.addQuestion = async (req, res) => {
+  const { exam_id, question_text, option_a, option_b, option_c, option_d, correct_option } = req.body;
+  try {
+    const [result] = await db.query(
+      'INSERT INTO Questions (exam_id, question_text, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [exam_id, question_text, option_a, option_b, option_c, option_d, correct_option]
+    );
+    res.send({ message: 'Question added successfully', questionId: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Assign an exam to a user and send email
+exports.assignExam = async (req, res) => {
+  const { exam_id, user_id, email } = req.body;
+  try {
+    await db.query('INSERT INTO Exam_Assignments (exam_id, user_id) VALUES (?, ?)', [exam_id, user_id]);
+    await sendExamEmail(email, `Exam ID: ${exam_id}`, 'Check your due date on the portal');
+    res.send({ message: 'Exam assigned and email sent ✅' });
+  } catch (err) {
+    res.status(500).json({ message: 'Assigned but email failed ❌', error: err.message });
+  }
+};
+
+// Get exams assigned to a user
+exports.getAssignedExams = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT Exams.*, Exam_Assignments.attempted 
+       FROM Exams 
+       JOIN Exam_Assignments ON Exams.id = Exam_Assignments.exam_id 
+       WHERE Exam_Assignments.user_id = ?`,
+      [userId]
+    );
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get questions for a specific exam
+exports.getExamQuestions = async (req, res) => {
+  console.log("📥 getExamQuestions CALLED for examId:", req.params.examId);
+  const { examId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT id, question_text, option_a, option_b, option_c, option_d 
+       FROM Questions 
+       WHERE exam_id = ?`,
+      [examId]
+    );
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Submit answers for an exam
+exports.submitExamAnswers = async (req, res) => {
+  const { examId } = req.params;
+  const { user_id, answers } = req.body;
+
+  if (!Array.isArray(answers)) {
+    return res.status(400).json({ error: 'Answers must be an array' });
+  }
+
+  try {
+    const [check] = await db.query(
+      'SELECT attempted FROM exam_assignments WHERE user_id = ? AND exam_id = ?',
+      [user_id, examId]
+    );
+
+    if (check.length === 0) return res.status(404).json({ error: 'Exam not assigned' });
+    if (check[0].attempted === 1) return res.status(400).json({ error: 'Exam already attempted' });
+
+    const values = answers.map(({ question_id, answer }) => [user_id, question_id, answer]);
+    await db.query('INSERT INTO Answers (user_id, question_id, answer_option) VALUES ?', [values]);
+
+    const [results] = await db.query(
+      `SELECT q.correct_option, a.answer_option 
+       FROM Questions q 
+       JOIN Answers a ON q.id = a.question_id 
+       WHERE q.exam_id = ? AND a.user_id = ?`,
+      [examId, user_id]
+    );
+
+    let score = 0;
+    results.forEach(r => {
+      if (r.answer_option === r.correct_option) score++;
+    });
+
+    const total = results.length;
+    const passed = score >= Math.ceil(total * 0.5);
+
+    await db.query(
+      `INSERT INTO Results (user_id, exam_id, total_score, passed)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE total_score = VALUES(total_score), passed = VALUES(passed), evaluated_at = CURRENT_TIMESTAMP`,
+      [user_id, examId, score, passed]
+    );
+
+    await db.query(
+      'UPDATE Exam_Assignments SET attempted = 1 WHERE user_id = ? AND exam_id = ?',
+      [user_id, examId]
+    );
+
+    res.json({ message: 'Answers submitted and result stored', score, total, passed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get all results for a specific exam
+exports.getAllExamResults = async (req, res) => {
+  const { examId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT a.user_id, u.name, COUNT(q.id) as total, 
+              SUM(a.answer_option = q.correct_option) as score
+       FROM Answers a
+       JOIN Questions q ON a.question_id = q.id
+       JOIN Users u ON a.user_id = u.id
+       WHERE q.exam_id = ?
+       GROUP BY a.user_id`,
+      [examId]
+    );
+    res.json(results || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get detailed result of a user for a specific exam
+exports.getUserExamResult = async (req, res) => {
+  const { examId, userId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT q.id as question_id, q.question_text, q.correct_option, a.answer_option
+       FROM Questions q
+       LEFT JOIN Answers a ON q.id = a.question_id AND a.user_id = ?
+       WHERE q.exam_id = ?`,
+      [userId, examId]
+    );
+
+    let score = 0;
+    results.forEach(r => {
+      if (r.answer_option && r.answer_option === r.correct_option) score++;
+    });
+
+    res.json({ answers: results, score, total: results.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+*/
+const db = require('../models/db');
+const { sendExamEmail } = require('../utils/mailer');
+const { hasPermission } = require('../middleware/permissionMiddleware');
+
+// Create a new exam
+exports.createExam = async (req, res) => {
+  // Check if user has permission to create exams
+  const hasCreatePermission = await hasPermission(req.user.id, 'create_exam');
+  if (!hasCreatePermission) {
+    return res.status(403).send('Access denied. Permission required: create_exam');
+  }
+  const { title, description, due_date, created_by, start_date, end_date } = req.body;
+  if (!title || !description || !due_date || !created_by || !start_date || !end_date) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  try {
+    const [result] = await db.query(
+      'INSERT INTO Exams (title, description, due_date, created_by, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
+      [title, description, due_date, created_by, start_date, end_date]
+    );
+    res.send({ message: 'Exam created successfully', examId: result.insertId });
+  } catch (err) {
+    console.error('Error creating exam:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Add a new question to an exam
+exports.addQuestion = async (req, res) => {
+  const { exam_id, question_text, option_a, option_b, option_c, option_d, correct_option, is_msq } = req.body;
+  try {
+    const [result] = await db.query(
+      'INSERT INTO Questions (exam_id, question_text, option_a, option_b, option_c, option_d, correct_option, is_msq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [exam_id, question_text, option_a, option_b, option_c, option_d, correct_option, is_msq || false]
+    );
+    res.send({ message: 'Question added successfully', questionId: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Assign an exam to a user and send email
+exports.assignExam = async (req, res) => {
+  const { exam_id, user_id, email } = req.body;
+  console.log('Assigning exam:', { exam_id, user_id, email }); // <-- Add this
+  try {
+    const [existing] = await db.query(
+      'SELECT * FROM exam_assignments WHERE exam_id = ? AND user_id = ?',
+      [exam_id, user_id]
+    );
+    if (existing.length > 0) {
+      return res.status(400).json({ error: "Exam already assigned to this user." });
+    }
+    await db.query(
+      'INSERT INTO exam_assignments (exam_id, user_id) VALUES (?, ?)',
+      [exam_id, user_id]
+    );
+    await sendExamEmail(email, `Exam ID: ${exam_id}`, 'Check your due date on the portal');
+    res.send({ message: 'Exam assigned and email sent ✅' });
+  } catch (err) {
+    console.error('Error inserting assignment:', err); // <-- Add this
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get exams assigned to a user
+exports.getAssignedExams = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const [results] = await db.query(
+  `SELECT Exams.*, exam_assignments.attempted 
+   FROM Exams 
+   JOIN exam_assignments ON Exams.id = exam_assignments.exam_id 
+   WHERE exam_assignments.user_id = ?
+     AND CURDATE() BETWEEN Exams.start_date AND Exams.end_date`,
+  [userId]
+);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get questions for a specific exam
+exports.getExamQuestions = async (req, res) => {
+  const { examId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT id, question_text, option_a, option_b, option_c, option_d, correct_option, is_msq 
+       FROM Questions 
+       WHERE exam_id = ?`,
+      [examId]
+    );
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Submit answers for an exam (Updated for MSQ support)
+exports.submitExamAnswers = async (req, res) => {
+  const { examId } = req.params;
+  const { user_id, answers } = req.body;
+
+  if (!Array.isArray(answers)) {
+    return res.status(400).json({ error: 'Answers must be an array' });
+  }
+
+  try {
+    const [check] = await db.query(
+      'SELECT attempted FROM exam_assignments WHERE user_id = ? AND exam_id = ?',
+      [user_id, examId]
+    );
+
+    if (check.length === 0) return res.status(404).json({ error: 'Exam not assigned' });
+    if (check[0].attempted === 1) return res.status(400).json({ error: 'Exam already attempted' });
+
+    // Get questions to check if they are MSQ or MCQ
+    const [questions] = await db.query(
+      'SELECT id, correct_option, is_msq FROM Questions WHERE exam_id = ?',
+      [examId]
+    );
+
+    let score = 0;
+    const total = questions.length;
+
+    // Process each answer
+    for (let i = 0; i < answers.length; i++) {
+      const answer = answers[i];
+      const question = questions.find(q => q.id === answer.question_id);
+      
+      if (!question) continue;
+
+      if (question.is_msq) {
+        // For MSQ: compare arrays (order doesn't matter)
+        const submittedAnswers = Array.isArray(answer.answer) ? answer.answer : [answer.answer];
+        const correctAnswers = question.correct_option.split(',').map(a => a.trim());
+        
+        // Check if arrays have same elements (order doesn't matter)
+        const isCorrect = submittedAnswers.length === correctAnswers.length &&
+          submittedAnswers.every(a => correctAnswers.includes(a)) &&
+          correctAnswers.every(a => submittedAnswers.includes(a));
+        
+        if (isCorrect) score++;
+      } else {
+        // For MCQ: simple string comparison
+        if (answer.answer === question.correct_option) {
+          score++;
+        }
+      }
+    }
+
+    const passed = score >= Math.ceil(total * 0.5);
+
+    // Store results
+    await db.query(
+      `INSERT INTO Results (user_id, exam_id, total_score, passed)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE total_score = VALUES(total_score), passed = VALUES(passed), evaluated_at = CURRENT_TIMESTAMP`,
+      [user_id, examId, score, passed]
+    );
+
+    // Mark exam as attempted
+    await db.query(
+      'UPDATE exam_assignments SET attempted = 1 WHERE user_id = ? AND exam_id = ?',
+      [user_id, examId]
+    );
+
+    res.json({ message: 'Answers submitted and result stored', score, total, passed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get all results for a specific exam
+exports.getAllExamResults = async (req, res) => {
+  const { examId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT a.user_id, u.name, COUNT(q.id) as total, 
+              SUM(a.answer_option = q.correct_option) as score
+       FROM Answers a
+       JOIN Questions q ON a.question_id = q.id
+       JOIN Users u ON a.user_id = u.id
+       WHERE q.exam_id = ?
+       GROUP BY a.user_id`,
+      [examId]
+    );
+    res.json(results || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get detailed result of a user for a specific exam
+// controllers/examController.js
+
+exports.getUserResults = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const [results] = await db.query(
+      `SELECT e.id AS exam_id, e.title, r.score, r.submitted_at
+       FROM Results r
+       JOIN Exams e ON r.exam_id = e.id
+       WHERE r.user_id = ?`,
+      [userId]
+    );
+
+    res.json(results);
+  } catch (err) {
+    console.error("Error in getUserResults:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// In your backend controller
+exports.getAllExams = async (req, res) => {
+  try {
+    const [results] = await db.query('SELECT id, title, start_date, end_date FROM exams');
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+// Load exams scheduled for a specific date
+exports.loadExamCalendar = async (req, res) => {
+  const selectedDate = req.params.date;
+
+  try {
+    const [rows] = await db.query(`
+      SELECT id, title, start_date, end_date
+      FROM Exams
+      WHERE start_date = ?
+    `, [selectedDate]);
+
+    // Add status field
+    const now = new Date();
+    const formattedRows = rows.map((exam) => {
+      const examDate = new Date(exam.start_date);
+      const status = now < examDate ? "Upcoming" : "Completed";
+      return {
+        id: exam.id,
+        title: exam.title,
+        date: exam.start_date,
+        status
+      };
+    });
+
+    res.json(formattedRows);
+  } catch (err) {
+    console.error("Error loading exam calendar:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+</file>
+
+<file path="server.js">
+/*const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const authRoutes = require('./routes/auth');
+
+dotenv.config();
+
+const app = express();
+//app.use(cors());
+app.use(express.json());
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+app.use(cors({
+  origin: 'http://localhost:8080', // your SAPUI5 frontend
+  credentials: true
+}));
+
+
+app.use('/api/auth', authRoutes);
+const examRoutes = require('./routes/exam');
+app.use('/api/exam', examRoutes);
+const dashboardRoutes = require('./routes/dashboard');
+app.use('/api/dashboard', require('./routes/dashboard'));
+// Add this line with your other route imports
+const permissionRoutes = require('./routes/permissions');
+
+// Add this line with your other app.use statements
+app.use('/api/permissions', permissionRoutes);
+
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
+*/
+/*const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+
+dotenv.config();
+const app = express();
+
+app.use(express.json());
+app.use(cookieParser());
+
+app.use(cors({
+  origin: 'http://localhost:8080',
+  credentials: true
+}));
+
+// 🔥 Add session middleware
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax'
+  }
+}));
+app.use((req, res, next) => {
+  console.log("🔐 Session:", req.session);
+  next();
+});
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/exam', require('./routes/exam'));
+app.use('/api/exams', require('./routes/exam'));
+
+// Add this line for /api/exams
+app.get('/api/exams', require('./routes/exam') );
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/permissions', require('./routes/permissions'));
+const userRoutes = require('./routes/auth');
+app.use('/api', userRoutes);
+
+app.use('/api/user', userRoutes);
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});*/
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const superadminRoutes = require('./routes/superadmin');
+const resultsRoutes = require("./routes/resultsRoutes");
+dotenv.config();
+const app = express();
+
+app.use(express.json());
+app.use(cookieParser());
+
+app.use(cors({
+  origin: 'http://localhost:8080',
+  credentials: true
+}));
+
+// 🔥 Add session middleware
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'none'
+  }
+}));
+app.use((req, res, next) => {
+  console.log("🔐 Session:", req.session);
+  next();
+});
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+//app.use('/api/exam', require('./routes/exam'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/permissions', require('./routes/permissions'));
+app.use('/api/superadmin', require('./routes/superadmin'));
+
+app.use("/api", resultsRoutes);
+
+
+// Exams list endpoint (if needed separately)
+app.use('/api/exams', require('./routes/exam'));
+
+// User-related endpoints
+const userRoutes = require('./routes/user');
+app.use('/api/users', userRoutes);
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/announcements', require('./routes/announcement'));
+
+// Serve frontend (index.html) for all non-API routes
+const path = require('path');
+
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, '..', 'exam')));
+
+// For all routes NOT starting with /api, serve index.html for frontend routing
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'exam', 'index.html'));
+});
+
+
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+</file>
+
+</files>
