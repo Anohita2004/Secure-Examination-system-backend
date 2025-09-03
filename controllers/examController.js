@@ -270,6 +270,19 @@ exports.getAssignedExams = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+exports.reportCheating = async (req, res) => {
+  const { user_id, exam_id, type, detail } = req.body;
+  try {
+    await db.query(
+      "INSERT INTO cheating_logs (user_id, exam_id, type, detail) VALUES (?, ?, ?, ?)",
+      [user_id, exam_id, type, detail || ""]
+    );
+    res.json({ message: "Cheating attempt logged" });
+  } catch (err) {
+    console.error("Error logging cheating:", err);
+    res.status(500).json({ error: "Failed to log cheating" });
+  }
+};
 
 
 
